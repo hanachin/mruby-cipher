@@ -474,3 +474,7 @@ assert("Cipher") do
     assert_cipher('0' * 32, encrypted, key, '0' * 32)
   end
 end
+
+assert("Cipher.ciphers") do
+  assert_equal(true, Cipher.ciphers.include?("AES-256-CBC"))
+end
