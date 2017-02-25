@@ -221,15 +221,16 @@ cipher_update(mrb_state *mrb, mrb_value self)
   if (out_len <= 0) {
     mrb_raisef(mrb, E_RANGE_ERROR, "data too big to make output buffer: %ld bytes", in_len);
   }
-  out_data = mrb_str_buf_new(mrb, out_len);
+  out_data = mrb_str_new(mrb, 0, out_len);
   out = (unsigned char *)RSTRING_PTR(out_data);
 
   // FIXME output may overflow
   if (!EVP_CipherUpdate(&c->ctx, out, &out_len, in, in_len)) {
     mrb_raise(mrb, E_CIPHER_ERROR, openssl_error_message());
   }
+
   mrb_assert(out_len < RSTRING_LEN(out_data));
-  RSTR_SET_LEN(mrb_str_ptr(out_data), out_len);
+  RSTR_SET_LEN(RSTRING(out_data), out_len);
 
   return out_data;
 }
