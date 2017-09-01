@@ -5,8 +5,8 @@ def b(hex)
   [hex].pack("H*")
 end
 
-def encrypt(key, iv, encrypted)
-  cipher = Cipher.new('AES-256-CBC')
+def encrypt(key, iv, encrypted, mode)
+  cipher = Cipher.new(mode)
   cipher.encrypt
   cipher.key = key
   cipher.iv = iv
@@ -14,8 +14,8 @@ def encrypt(key, iv, encrypted)
   cipher.update(encrypted) + cipher.final
 end
 
-def decrypt(key, iv, encrypted)
-  cipher = Cipher.new('AES-256-CBC')
+def decrypt(key, iv, encrypted, mode)
+  cipher = Cipher.new(mode)
   cipher.decrypt
   cipher.key = key
   cipher.iv = iv
@@ -23,15 +23,15 @@ def decrypt(key, iv, encrypted)
   cipher.update(encrypted) + cipher.final
 end
 
-def assert_cipher(plaintext, encrypted, key, iv)
+def assert_cipher(plaintext, encrypted, key, iv, mode = 'AES-256-CBC')
   plaintext, encrypted, key, iv = b(plaintext), b(encrypted), b(key), b(iv)
 
   assert_equal(plaintext) do
-    decrypt(key, iv, encrypted)
+    decrypt(key, iv, encrypted, mode)
   end
 
   assert_equal(encrypted) do
-    encrypt(key, iv, plaintext)
+    encrypt(key, iv, plaintext, mode)
   end
 end
 
@@ -472,6 +472,29 @@ assert("Cipher") do
   var_key.split("\n") do |line|
     key, encrypted = line.split(' | ')
     assert_cipher('0' * 32, encrypted, key, '0' * 32)
+  end
+end
+
+assert("Cipher") do
+  gf_sbox.split("\n") do |line|
+    plaintext, encrypted = line.split(' | ')
+    assert_cipher(plaintext, encrypted, '0' * 64, '0' * 32, 'AES-128-CBC')
+  end
+
+  key_sbox.split("\n") do |line|
+    key, encrypted = line.split(' | ')
+
+    assert_cipher('0' * 32, encrypted, key, '0' * 32, 'AES-128-CBC')
+  end
+
+  var_text.split("\n") do |line|
+    plaintext, encrypted = line.split(' | ')
+    assert_cipher(plaintext, encrypted, '0' * 64, '0' * 32, 'AES-128-CBC')
+  end
+
+  var_key.split("\n") do |line|
+    key, encrypted = line.split(' | ')
+    assert_cipher('0' * 32, encrypted, key, '0' * 32, 'AES-128-CBC')
   end
 end
 
