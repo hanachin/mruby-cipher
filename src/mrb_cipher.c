@@ -22,8 +22,9 @@
 #define E_CIPHER_ERROR (mrb_class_get_under(mrb, mrb_class_get(mrb, "Cipher"), "CipherError"))
 
 struct mrb_cipher {
-  EVP_CIPHER_CTX ctx;
+  EVP_CIPHER_CTX * ctx;
 };
+
 static void cipher_free(mrb_state *mrb, void *ptr);
 static const struct mrb_data_type mrb_cipher_type = { "Cipher", cipher_free };
 
@@ -79,7 +80,7 @@ cipher_free(mrb_state *mrb, void *ptr)
 {
   struct mrb_cipher *c = ptr;
 
-  EVP_CIPHER_CTX_cleanup(&c->ctx);
+  EVP_CIPHER_CTX_free(c->ctx);
 
   mrb_free(mrb, c);
 }
@@ -96,13 +97,13 @@ cipher_initialize(mrb_state *mrb, mrb_value self)
 
   c = (struct mrb_cipher *)mrb_malloc(mrb, sizeof(*c));
 
-  EVP_CIPHER_CTX_init(&c->ctx);
+  c->ctx = EVP_CIPHER_CTX_new();
 
   if (!(cipher = EVP_get_cipherbyname(name))) {
     mrb_raisef(mrb, E_RUNTIME_ERROR, "unsupported cipher algorithm (%S)", mrb_str_new_cstr(mrb, name));
   }
 
-  if (EVP_CipherInit_ex(&c->ctx, cipher, NULL, NULL, NULL, -1) != 1) {
+  if (EVP_CipherInit_ex(c->ctx, cipher, NULL, NULL, NULL, -1) != 1) {
     mrb_raise(mrb, E_CIPHER_ERROR, openssl_error_message());
   }
 
@@ -116,7 +117,7 @@ cipher_decrypt(mrb_state *mrb, mrb_value self)
 {
   struct mrb_cipher *c = cipher_get_ptr(mrb, self);
 
-  if (EVP_CipherInit_ex(&c->ctx, NULL, NULL, NULL, NULL, 0) != 1) {
+  if (EVP_CipherInit_ex(c->ctx, NULL, NULL, NULL, NULL, 0) != 1) {
     mrb_raise(mrb, E_CIPHER_ERROR, "CipherError");
   }
 
@@ -128,7 +129,7 @@ cipher_encrypt(mrb_state *mrb, mrb_value self)
 {
   struct mrb_cipher *c = cipher_get_ptr(mrb, self);
 
-  if (EVP_CipherInit_ex(&c->ctx, NULL, NULL, NULL, NULL, 1) != 1) {
+  if (EVP_CipherInit_ex(c->ctx, NULL, NULL, NULL, NULL, 1) != 1) {
     mrb_raise(mrb, E_CIPHER_ERROR, openssl_error_message());
   }
 
@@ -145,13 +146,13 @@ cipher_set_key(mrb_state *mrb, mrb_value self)
 
   c = cipher_get_ptr(mrb, self);
   mrb_get_args(mrb, "S", &key);
-  key_len = EVP_CIPHER_CTX_key_length(&c->ctx);
+  key_len = EVP_CIPHER_CTX_key_length(c->ctx);
 
   if (RSTRING_LEN(key) != key_len) {
     mrb_raisef(mrb, E_ARGUMENT_ERROR, "key must be %S bytes", mrb_fixnum_value(key_len));
   }
 
-  if (EVP_CipherInit_ex(&c->ctx, NULL, NULL, (const unsigned char *)RSTRING_PTR(key), NULL, -1) != 1) {
+  if (EVP_CipherInit_ex(c->ctx, NULL, NULL, (const unsigned char *)RSTRING_PTR(key), NULL, -1) != 1) {
     mrb_raise(mrb, E_CIPHER_ERROR, openssl_error_message());
   }
 
@@ -169,13 +170,13 @@ cipher_set_iv(mrb_state *mrb, mrb_value self)
 
   c = cipher_get_ptr(mrb, self);
   mrb_get_args(mrb, "S", &iv);
-  iv_len = EVP_CIPHER_CTX_iv_length(&c->ctx);
+  iv_len = EVP_CIPHER_CTX_iv_length(c->ctx);
 
   if (RSTRING_LEN(iv) != iv_len) {
     mrb_raisef(mrb, E_ARGUMENT_ERROR, "iv must be %S bytes", mrb_fixnum_value(iv_len));
   }
 
-  if (EVP_CipherInit_ex(&c->ctx, NULL, NULL, NULL, (const unsigned char *)RSTRING_PTR(iv), -1) != 1) {
+  if (EVP_CipherInit_ex(c->ctx, NULL, NULL, NULL, (const unsigned char *)RSTRING_PTR(iv), -1) != 1) {
     mrb_raise(mrb, E_CIPHER_ERROR, openssl_error_message());
   }
 
@@ -190,7 +191,7 @@ cipher_set_padding(mrb_state *mrb, mrb_value self)
 
   c = cipher_get_ptr(mrb, self);
   mrb_get_args(mrb, "i", &padding);
-  if (EVP_CIPHER_CTX_set_padding(&c->ctx, mrb_fixnum(padding)) != 1) {
+  if (EVP_CIPHER_CTX_set_padding(c->ctx, mrb_fixnum(padding)) != 1) {
     mrb_raise(mrb, E_CIPHER_ERROR, openssl_error_message());
   }
   return padding;
@@ -217,7 +218,7 @@ cipher_update(mrb_state *mrb, mrb_value self)
     mrb_raise(mrb, E_ARGUMENT_ERROR, "data must not be empty");
   }
 
-  out_len = in_len + EVP_CIPHER_CTX_block_size(&c->ctx);
+  out_len = in_len + EVP_CIPHER_CTX_block_size(c->ctx);
   if (out_len <= 0) {
     mrb_raisef(mrb, E_RANGE_ERROR, "data too big to make output buffer: %ld bytes", in_len);
   }
@@ -225,7 +226,7 @@ cipher_update(mrb_state *mrb, mrb_value self)
   out = (unsigned char *)RSTRING_PTR(out_data);
 
   // FIXME output may overflow
-  if (!EVP_CipherUpdate(&c->ctx, out, &out_len, in, in_len)) {
+  if (!EVP_CipherUpdate(c->ctx, out, &out_len, in, in_len)) {
     mrb_raise(mrb, E_CIPHER_ERROR, openssl_error_message());
   }
 
@@ -244,8 +245,8 @@ cipher_final(mrb_state *mrb, mrb_value self)
 
   c = cipher_get_ptr(mrb, self);
 
-  out_data = mrb_str_buf_new(mrb, EVP_CIPHER_CTX_block_size(&c->ctx));
-  if (!EVP_CipherFinal_ex(&c->ctx, (unsigned char *)RSTRING_PTR(out_data), &out_len)) {
+  out_data = mrb_str_buf_new(mrb, EVP_CIPHER_CTX_block_size(c->ctx));
+  if (!EVP_CipherFinal_ex(c->ctx, (unsigned char *)RSTRING_PTR(out_data), &out_len)) {
     mrb_raise(mrb, E_CIPHER_ERROR, openssl_error_message());
   }
   mrb_assert(out_len <= RSTRING_LEN(out_data));
